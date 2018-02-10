@@ -204,13 +204,41 @@ static void dispatcher(task_switch_type_e type)
 {
 
 	 task_list.tasks[task_list.next_task].task_body = idle_task;
-
+	 uint8_t i;
+	 uint8_t max_priority = 0;
+	 for(i = 0 ; i < task_list.nTasks; i++)
+	 {
+		 if((task_list.tasks[task_list.next_task].priority > max_priority)
+				 &&((S_RUNNING == task_list.tasks[task_list.next_task].state)
+						 || (S_READY == task_list.tasks[task_list.next_task].state)))
+		 {
+			 max_priority = task_list.tasks[task_list.next_task].priority;
+			 task_list.tasks[task_list.next_task].task_body = task_list.tasks[task_list.current_task].task_body;
+		 }
+	 }
+	 if(task_list.tasks[task_list.next_task].task_body != task_list.tasks[task_list.current_task].task_body)
+	 {
+		 context_switch(kFromISR);
+	 }
 
 }
 
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
+#ifdef RTOS_CONTEXT_SWITCH
+/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
 
+
+#define RTOS_CONTEXT_SWITCH
+
+#else
+/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
+
+	task_list.tasks[task_list.current_task].task_body = task_list.tasks[task_list.next_task].task_body;
+	task_list.tasks[task_list.next_task].state = S_RUNNING;
+
+
+#endif
 }
 
 static void activate_waiting_tasks()
