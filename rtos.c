@@ -115,26 +115,22 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 {
 	rtos_task_handle_t retval = RTOS_INVALID_TASK;
 
-	if(RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
+	if (RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
 	{
-
-		task_list.tasks[task_list.nTasks].state = (kStartSuspended == autostart) ? S_SUSPENDED : S_READY;
-
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].local_tick = 0;
 		task_list.tasks[task_list.nTasks].task_body = task_body;
 		task_list.tasks[task_list.nTasks].sp =
-				&(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - 1 - STACK_FRAME_SIZE]);
-		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] = STACK_PSR_DEFAULT;
-		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] = (uint32_t) task_body;
+				&(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - 1]);
 		task_list.nTasks++;
-		return retval = task_list.nTasks;
+		task_list.tasks[task_list.nTasks].state =
+				kStartSuspended == autostart ? S_SUSPENDED : S_READY;
+		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE
+				- STACK_PSR_OFFSET] = STACK_PSR_DEFAULT;
+		retval = task_list.nTasks;
+	}
+	task_list.nTasks++;
 
-	}
-	else
-	{
-		return retval;
-	}
 	return retval;
 }
 
@@ -181,26 +177,26 @@ static void dispatcher(task_switch_type_e type)
 #if document
 	 task_list.tasks[task_list.next_task].task_body = idle_task;
 #endif
-	 uint8_t index;
-	 int8_t highest_priority = -1;
-	 rtos_task_handle_t next_task = RTOS_INVALID_TASK;
+	rtos_task_handle_t next_task = RTOS_INVALID_TASK;
+	uint8_t index;
+	int8_t highest_priority = -1;
 
-	 for(index = 0 ; index < task_list.nTasks; index++)
-	 {
-		 if((highest_priority < task_list.tasks[index].priority)
-				 && ((S_RUNNING == task_list.tasks[index].state) ||
-						 (S_READY == task_list.tasks[index].state)))
-		 {
-			 next_task = index;
-			 highest_priority = task_list.tasks[index].priority;
-		 }
-	 }
+	for (index = 0; index < task_list.nTasks; index++)
+	{
+		if ((highest_priority < task_list.tasks[index].priority)
+		        && (S_RUNNING == task_list.tasks[index].state
+		                || S_READY == task_list.tasks[index].state))
+		{
+			next_task = index;
+			highest_priority = task_list.tasks[index].priority;
+		}
+	}
 
-	 if(task_list.current_task != next_task)
-	 {
-		 task_list.next_task = next_task;
-		 context_switch(type);
-	 }
+	if (task_list.current_task != next_task)
+	{
+		task_list.next_task = next_task;
+		context_switch(type);
+	}
 
 }
 
@@ -275,7 +271,7 @@ void SysTick_Handler(void)
 	refresh_is_alive();
 #endif
 	dispatcher(kFromISR);
-	task_list.global_tick++;
+	//task_list.global_tick++;
 	activate_waiting_tasks();
 	reload_systick();
 
