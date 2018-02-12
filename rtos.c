@@ -62,6 +62,7 @@ typedef struct
 	rtos_tick_t local_tick;
 	uint32_t reserved[10];
 	uint32_t stack[RTOS_STACK_SIZE];
+
 } rtos_tcb_t;
 
 /**********************************************************************************/
@@ -75,8 +76,8 @@ struct
 	rtos_task_handle_t next_task;
 	rtos_tcb_t tasks[RTOS_MAX_NUMBER_OF_TASKS + 1];
 	rtos_tick_t global_tick;
-} task_list =
-{ 0 };
+
+} task_list = { 0 };
 
 /**********************************************************************************/
 // Local methods prototypes
@@ -225,20 +226,21 @@ static void dispatcher(task_switch_type_e type)
 
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
-#ifdef RTOS_CONTEXT_SWITCH
-/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
+	#ifdef RTOS_CONTEXT_SWITCH
+	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
 
+	#else
 
-#define RTOS_CONTEXT_SWITCH
+	#define RTOS_CONTEXT_SWITCH
 
-#else
-/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
+	#endif
 
+	/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
 	task_list.tasks[task_list.current_task].task_body = task_list.tasks[task_list.next_task].task_body;
 	task_list.tasks[task_list.next_task].state = S_RUNNING;
+	/**INVOCA EL CAMBIO DE CONTEXTO (PendSV)*/
+	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 
-
-#endif
 }
 
 static void activate_waiting_tasks()
