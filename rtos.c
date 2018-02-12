@@ -115,22 +115,27 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 {
 	rtos_task_handle_t retval = RTOS_INVALID_TASK;
 
-	if (RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
+	if(RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
 	{
+
+		task_list.tasks[task_list.nTasks].state = (kAutoStart == autostart) ? S_READY : S_SUSPENDED;
+
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].local_tick = 0;
 		task_list.tasks[task_list.nTasks].task_body = task_body;
 		task_list.tasks[task_list.nTasks].sp =
-				&(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - 1]);
-		task_list.nTasks++;
-		task_list.tasks[task_list.nTasks].state =
-				kStartSuspended == autostart ? S_SUSPENDED : S_READY;
-		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE
-				- STACK_PSR_OFFSET] = STACK_PSR_DEFAULT;
+				&(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - 1 - STACK_FRAME_SIZE]);
+		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] = STACK_PSR_DEFAULT;
+		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] = (uint32_t) task_body;
 		retval = task_list.nTasks;
-	}
-	task_list.nTasks++;
+		task_list.nTasks++;
+		return retval;
 
+	}
+	else
+	{
+		return retval;
+	}
 	return retval;
 }
 
@@ -271,7 +276,7 @@ void SysTick_Handler(void)
 	refresh_is_alive();
 #endif
 	dispatcher(kFromISR);
-	//task_list.global_tick++;
+	task_list.global_tick++;
 	activate_waiting_tasks();
 	reload_systick();
 

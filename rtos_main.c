@@ -47,7 +47,7 @@ int main(void)
 	rtos_create_task(dummy_task1, 1, kAutoStart);
 	rtos_create_task(dummy_task2, 2, kAutoStart);
 	rtos_create_task(dummy_task3, 1, kAutoStart);
-	rtos_start_scheduler();
+2	rtos_start_scheduler();
 
 	for (;;)
 	{
