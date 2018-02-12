@@ -118,7 +118,7 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 	if(RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
 	{
 
-		task_list.tasks[task_list.nTasks].state = (kAutoStart == autostart) ? S_SUSPENDED : S_READY;
+		task_list.tasks[task_list.nTasks].state = (kStartSuspended == autostart) ? S_SUSPENDED : S_READY;
 
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].local_tick = 0;
@@ -223,6 +223,7 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 		first_run = 1;
 	}
 #endif
+
 	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
 	register uint32_t *sp asm("sp");
 	task_list.tasks[task_list.current_task].sp = sp;
@@ -282,9 +283,9 @@ void SysTick_Handler(void)
 
 void PendSV_Handler(void)
 {
-	register uint32_t *sp asm("r0");
+	register uint32_t *r0 asm("r0");
 	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
-	sp = task_list.tasks[task_list.current_task].sp;
+	r0 = task_list.tasks[task_list.current_task].sp;
 	asm("mov r7, r0");
 }
 
