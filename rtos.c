@@ -118,7 +118,7 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 	if(RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
 	{
 
-		task_list.tasks[task_list.nTasks].state = (kAutoStart == autostart) ? S_READY : S_SUSPENDED; /**S_SUSPENDED : S_READY*/
+		task_list.tasks[task_list.nTasks].state = (kAutoStart == autostart) ? S_SUSPENDED : S_READY;
 
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].local_tick = 0;
@@ -140,9 +140,7 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 
 rtos_tick_t rtos_get_clock(void)
 {
-
 	return task_list.global_tick;
-
 }
 
 void rtos_delay(rtos_tick_t ticks)
@@ -180,8 +178,9 @@ static void reload_systick(void)
 
 static void dispatcher(task_switch_type_e type)
 {
-
+#if document
 	 task_list.tasks[task_list.next_task].task_body = idle_task;
+#endif
 	 uint8_t index;
 	 int8_t highest_priority = -1;
 	 rtos_task_handle_t next_task = RTOS_INVALID_TASK;
@@ -207,21 +206,23 @@ static void dispatcher(task_switch_type_e type)
 
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
-//	#ifdef RTOS_CONTEXT_SWITCH
-//
-//	#else
-//	#define RTOS_CONTEXT_SWITCH
-//	#endif
-//	static first_run = 0;
-//
-//	if(first_run)
-//	{
-//
-//	}
-//	else
-//	{
-//		first_run = 1;
-//	}
+#if _debug
+	#ifdef RTOS_CONTEXT_SWITCH
+
+	#else
+	#define RTOS_CONTEXT_SWITCH
+	#endif
+	static first_run = 0;
+
+	if(first_run)
+	{
+
+	}
+	else
+	{
+		first_run = 1;
+	}
+#endif
 	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
 	register uint32_t *sp asm("sp");
 	task_list.tasks[task_list.current_task].sp = sp;
@@ -248,6 +249,7 @@ static void activate_waiting_tasks()
 			 }
 		 }
 	 }
+
 }
 
 /**********************************************************************************/
@@ -271,10 +273,11 @@ void SysTick_Handler(void)
 #ifdef RTOS_ENABLE_IS_ALIVE
 	refresh_is_alive();
 #endif
+	dispatcher(kFromISR);
 	task_list.global_tick++;
 	activate_waiting_tasks();
 	reload_systick();
-	dispatcher(kFromISR);
+
 }
 
 void PendSV_Handler(void)
