@@ -23,9 +23,12 @@
 #define FORCE_INLINE 	__attribute__((always_inline)) inline
 
 #define STACK_FRAME_SIZE			8
-#define STACK_LR_OFFSET				2
-#define STACK_PSR_OFFSET			1
+#define STACK_PSR_OFFSET			9
+#define STACK_PC_OFFSET				8
+#define STACK_LR_OFFSET				7
 #define STACK_PSR_DEFAULT			0x01000000
+#define RTOS_INVALID_TASK			-1
+
 
 /**********************************************************************************/
 // IS ALIVE definitions
@@ -62,7 +65,6 @@ typedef struct
 	rtos_tick_t local_tick;
 	uint32_t reserved[10];
 	uint32_t stack[RTOS_STACK_SIZE];
-
 } rtos_tcb_t;
 
 /**********************************************************************************/
@@ -76,8 +78,8 @@ struct
 	rtos_task_handle_t next_task;
 	rtos_tcb_t tasks[RTOS_MAX_NUMBER_OF_TASKS + 1];
 	rtos_tick_t global_tick;
-
-} task_list = { 0 };
+} task_list =
+{ 0 };
 
 /**********************************************************************************/
 // Local methods prototypes
@@ -97,17 +99,13 @@ void rtos_start_scheduler(void)
 {
 #ifdef RTOS_ENABLE_IS_ALIVE
 	init_is_alive();
+	task_list.global_tick = 0;
+	rtos_create_task(idle_task, 0, kAutoStart);
+	task_list.current_task = RTOS_INVALID_TASK;
 #endif
 	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk
 	        | SysTick_CTRL_ENABLE_Msk;
 	reload_systick();
-
-#if 0 //ALDANA_ASESORIA
-
-	rtos_create_task(idle_task, 0, kAutoStart);
-
-#endif
-
 
 	for (;;);
 }
@@ -115,78 +113,57 @@ void rtos_start_scheduler(void)
 rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 		rtos_autostart_e autostart)
 {
+	rtos_task_handle_t retval = RTOS_INVALID_TASK;
+
 	if(RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
 	{
 
-		if(kAutoStart == autostart)
-		{
-			task_list.tasks[task_list.nTasks].state = S_READY;
-		}
-
-		else
-		{
-			task_list.tasks[task_list.nTasks].state = S_SUSPENDED;
-		}
+		task_list.tasks[task_list.nTasks].state = (kAutoStart == autostart) ? S_READY : S_SUSPENDED; /**S_SUSPENDED : S_READY*/
 
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].local_tick = 0;
 		task_list.tasks[task_list.nTasks].task_body = task_body;
-		task_list.tasks[task_list.nTasks].sp = &(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - 1 - STACK_FRAME_SIZE]);
+		task_list.tasks[task_list.nTasks].sp =
+				&(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - 1 - STACK_FRAME_SIZE]);
+		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] = STACK_PSR_DEFAULT;
+		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] = (uint32_t) task_body;
 		task_list.nTasks++;
-
-#if 0 //PREGUNTA ASESORIA
-		task_list.tasks[task_list.nTasks].stack = &task_body;	//stack_frame_dummy; /*RTOS_STACK_SIZE - 1 -STACK_FRAME_SIZE checarlo en documento*/
-		task_list.tasks[task_list.nTasks].stack = STACK_PSR_DEFAULT;
-#endif
-		return task_list.current_task = task_list.nTasks;
+		return retval = task_list.nTasks;
 
 	}
 	else
 	{
-		return -1;
+		return retval;
 	}
-	/**return retorno**/
+	return retval;
 }
 
 rtos_tick_t rtos_get_clock(void)
 {
-#if 0 //ALDANAS REVISION
 
-	return SysTick->VAL; // o a traves de la API
+	return task_list.global_tick;
 
-#endif
-
-	return 0;
 }
 
 void rtos_delay(rtos_tick_t ticks)
 {
-	task_list.tasks[task_list.nTasks].state = S_WAITING;
-	task_list.tasks[task_list.nTasks].local_tick = ticks;
-
-#if 0 //Aldana Asesoria
-	task_list.tasks[task_list.nTasks].task_body = dispatcher;
-#endif
+	task_list.tasks[task_list.current_task].state = S_WAITING;
+	task_list.tasks[task_list.current_task].local_tick = ticks;
+	dispatcher(kFromNormalExec);
 
 }
 
 void rtos_suspend_task(void)
 {
-	task_list.tasks[task_list.nTasks].state = S_SUSPENDED;
-
-#if 0 //Aldana Asesoria
-	task_list.tasks[task_list.nTasks].task_body = dispatcher;
-#endif
+	task_list.tasks[task_list.current_task].state = S_SUSPENDED;
+	dispatcher(kFromNormalExec);
 
 }
 
 void rtos_activate_task(rtos_task_handle_t task)
 {
-	task_list.tasks[task_list.nTasks].state = S_READY;
-
-#if 0 //Aldana Asesoria
-	task_list.tasks[task_list.nTasks].task_body = dispatcher;
-#endif
+	task_list.tasks[task_list.current_task].state = S_READY;
+	dispatcher(kFromNormalExec);
 
 }
 
@@ -205,47 +182,72 @@ static void dispatcher(task_switch_type_e type)
 {
 
 	 task_list.tasks[task_list.next_task].task_body = idle_task;
-	 uint8_t i;
-	 uint8_t max_priority = 0;
-	 for(i = 0 ; i < task_list.nTasks; i++)
+	 uint8_t index;
+	 int8_t highest_priority = -1;
+	 rtos_task_handle_t next_task = RTOS_INVALID_TASK;
+
+	 for(index = 0 ; index < task_list.nTasks; index++)
 	 {
-		 if((task_list.tasks[task_list.next_task].priority > max_priority)
-				 &&((S_RUNNING == task_list.tasks[task_list.next_task].state)
-						 || (S_READY == task_list.tasks[task_list.next_task].state)))
+		 if((highest_priority < task_list.tasks[index].priority)
+				 && ((S_RUNNING == task_list.tasks[index].state) ||
+						 (S_READY == task_list.tasks[index].state)))
 		 {
-			 max_priority = task_list.tasks[task_list.next_task].priority;
-			 task_list.tasks[task_list.next_task].task_body = task_list.tasks[task_list.current_task].task_body;
+			 next_task = index;
+			 highest_priority = task_list.tasks[index].priority;
 		 }
 	 }
-	 if(task_list.tasks[task_list.next_task].task_body != task_list.tasks[task_list.current_task].task_body)
+
+	 if(task_list.current_task != next_task)
 	 {
-		 context_switch(kFromISR);
+		 task_list.next_task = next_task;
+		 context_switch(type);
 	 }
 
 }
 
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
-	#ifdef RTOS_CONTEXT_SWITCH
+//	#ifdef RTOS_CONTEXT_SWITCH
+//
+//	#else
+//	#define RTOS_CONTEXT_SWITCH
+//	#endif
+//	static first_run = 0;
+//
+//	if(first_run)
+//	{
+//
+//	}
+//	else
+//	{
+//		first_run = 1;
+//	}
 	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
-
-	#else
-
-	#define RTOS_CONTEXT_SWITCH
-
-	#endif
-
+	register uint32_t *sp asm("sp");
+	task_list.tasks[task_list.current_task].sp = sp;
 	/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
-	task_list.tasks[task_list.current_task].task_body = task_list.tasks[task_list.next_task].task_body;
-	task_list.tasks[task_list.next_task].state = S_RUNNING;
-	/**INVOCA EL CAMBIO DE CONTEXTO (PendSV)*/
+	task_list.current_task = task_list.next_task;
+	task_list.tasks[task_list.current_task].state = S_RUNNING;
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 
 }
 
 static void activate_waiting_tasks()
 {
+	 uint8_t index;
 
+	 for(index = 0 ; index < task_list.nTasks; index++)
+	 {
+		 if(S_WAITING == task_list.tasks[index].state)
+		 {
+			 task_list.tasks[index].local_tick--;
+
+			 if(0 == task_list.tasks[index].local_tick)
+			 {
+				 task_list.tasks[index].state = S_READY;
+			 }
+		 }
+	 }
 }
 
 /**********************************************************************************/
@@ -269,13 +271,18 @@ void SysTick_Handler(void)
 #ifdef RTOS_ENABLE_IS_ALIVE
 	refresh_is_alive();
 #endif
+	task_list.global_tick++;
 	activate_waiting_tasks();
 	reload_systick();
+	dispatcher(kFromISR);
 }
 
 void PendSV_Handler(void)
 {
-
+	register uint32_t *sp asm("r0");
+	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
+	sp = task_list.tasks[task_list.current_task].sp;
+	asm("mov r7, r0");
 }
 
 /**********************************************************************************/
