@@ -23,9 +23,8 @@
 #define FORCE_INLINE 	__attribute__((always_inline)) inline
 
 #define STACK_FRAME_SIZE			8
-#define STACK_PSR_OFFSET			9
-#define STACK_PC_OFFSET				8
-#define STACK_LR_OFFSET				7
+#define STACK_PC_OFFSET				3
+#define STACK_PSR_OFFSET			2
 #define STACK_PSR_DEFAULT			0x01000000
 #define RTOS_INVALID_TASK			-1
 
@@ -179,9 +178,8 @@ static void reload_systick(void)
 
 static void dispatcher(task_switch_type_e type)
 {
-#if document
-	 task_list.tasks[task_list.next_task].task_body = idle_task;
-#endif
+	task_list.tasks[task_list.next_task].task_body = idle_task;
+
 	rtos_task_handle_t next_task = RTOS_INVALID_TASK;
 	uint8_t index;
 	int8_t highest_priority = -1;
@@ -213,7 +211,8 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 	#else
 	#define RTOS_CONTEXT_SWITCH
 	#endif
-	static first_run = 0;
+
+	static uint8_t first_run = 0;
 
 	if(first_run)
 	{
@@ -224,7 +223,6 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 		first_run = 1;
 	}
 #endif
-
 	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
 	register uint32_t *sp asm("sp");
 	task_list.tasks[task_list.current_task].sp = sp;
@@ -241,7 +239,7 @@ static void activate_waiting_tasks()
 
 	 for(index = 0 ; index < task_list.nTasks; index++)
 	 {
-		 if(S_WAITING == task_list.tasks[index].state)
+		 if(S_WAITING == task_list.tasks[index].state || S_SUSPENDED == task_list.tasks[index].state)/** || S_SUSPENDED == task_list.tasks[index].state*/
 		 {
 			 task_list.tasks[index].local_tick--;
 
@@ -284,9 +282,9 @@ void SysTick_Handler(void)
 
 void PendSV_Handler(void)
 {
-	register uint32_t *r0 asm("r0");
+	register uint32_t *sp asm("r0");
 	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
-	r0 = task_list.tasks[task_list.current_task].sp;
+	sp = task_list.tasks[task_list.current_task].sp;
 	asm("mov r7, r0");
 }
 
