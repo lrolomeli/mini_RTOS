@@ -23,10 +23,10 @@
 #define FORCE_INLINE 	__attribute__((always_inline)) inline
 
 #define STACK_FRAME_SIZE			8
-#define STACK_PC_OFFSET				3
-#define STACK_PSR_OFFSET			2
+#define STACK_PC_OFFSET				2
+#define STACK_PSR_OFFSET			1
 #define STACK_PSR_DEFAULT			0x01000000
-#define RTOS_INVALID_TASK			-1
+#define RTOS_INVALID_TASK			(-1)
 
 
 /**********************************************************************************/
@@ -160,7 +160,7 @@ void rtos_suspend_task(void)
 
 void rtos_activate_task(rtos_task_handle_t task)
 {
-	task_list.tasks[task_list.current_task].state = S_READY;
+	task_list.tasks[task].state = S_READY;
 	dispatcher(kFromNormalExec);
 
 }
@@ -211,21 +211,17 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 	#else
 	#define RTOS_CONTEXT_SWITCH
 	#endif
-
-	static uint8_t first_run = 0;
-
-	if(first_run)
-	{
-
-	}
-	else
-	{
-		first_run = 1;
-	}
 #endif
-	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
+//	static uint8_t first_run = 1;
 	register uint32_t *sp asm("sp");
-	task_list.tasks[task_list.current_task].sp = sp;
+
+	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
+//	if(first_run)
+//	{
+//		first_run = 0;
+		task_list.tasks[task_list.current_task].sp = sp - 9;
+//	}
+
 	/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
 	task_list.current_task = task_list.next_task;
 	task_list.tasks[task_list.current_task].state = S_RUNNING;
@@ -272,10 +268,11 @@ void SysTick_Handler(void)
 {
 #ifdef RTOS_ENABLE_IS_ALIVE
 	refresh_is_alive();
+
 #endif
-	dispatcher(kFromISR);
 	task_list.global_tick++;
 	activate_waiting_tasks();
+	dispatcher(kFromISR);
 	reload_systick();
 
 }
@@ -285,7 +282,7 @@ void PendSV_Handler(void)
 	register uint32_t *sp asm("r0");
 	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
 	sp = task_list.tasks[task_list.current_task].sp;
-	asm("mov r7, r0");
+	asm("MOV r7, r0");
 }
 
 /**********************************************************************************/
