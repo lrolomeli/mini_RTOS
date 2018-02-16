@@ -178,8 +178,6 @@ static void reload_systick(void)
 
 static void dispatcher(task_switch_type_e type)
 {
-	task_list.tasks[task_list.next_task].task_body = idle_task;
-
 	rtos_task_handle_t next_task = RTOS_INVALID_TASK;
 	uint8_t index;
 	int8_t highest_priority = -1;
@@ -254,6 +252,7 @@ static void activate_waiting_tasks()
 
 static void idle_task(void)
 {
+	//rtos_activate_task(0);
 	for (;;)
 	{
 
