@@ -22,6 +22,7 @@
 
 #define FORCE_INLINE 	__attribute__((always_inline)) inline
 
+#define STACK_OFFSET_ISR_AND_EXEC	9
 #define STACK_FRAME_SIZE			8
 #define STACK_PC_OFFSET				2
 #define STACK_PSR_OFFSET			1
@@ -203,22 +204,27 @@ static void dispatcher(task_switch_type_e type)
 
 FORCE_INLINE static void context_switch(task_switch_type_e type)
 {
-#if _debug
-	#ifdef RTOS_CONTEXT_SWITCH
-
-	#else
-	#define RTOS_CONTEXT_SWITCH
-	#endif
-#endif
-//	static uint8_t first_run = 1;
+	static uint8_t first_run = 1;
 	register uint32_t *sp asm("sp");
 
-	/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
-//	if(first_run)
-//	{
-//		first_run = 0;
-		task_list.tasks[task_list.current_task].sp = sp - 9;
-//	}
+
+	if(first_run)
+	{
+		first_run = 0;
+	}
+	else
+	{
+		/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
+		task_list.tasks[task_list.current_task].sp = (kFromNormalExec == type) ? sp - 9 : sp + 9;
+//		if(kFromNormalExec == type)
+//		{
+//			task_list.tasks[task_list.current_task].sp = sp - STACK_OFFSET_ISR_AND_EXEC;
+//		}
+//		else if(kFromISR == type)
+//		{
+//			task_list.tasks[task_list.current_task].sp = sp + STACK_OFFSET_ISR_AND_EXEC;
+//		}
+	}
 
 	/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
 	task_list.current_task = task_list.next_task;
