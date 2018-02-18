@@ -20,6 +20,18 @@ typedef enum
 	kAutoStart, kStartSuspended
 } rtos_autostart_e;
 
+/*! @brief pririty of tasks */
+typedef enum
+{
+	LOWEST_PRIORITY = -1, PRIORITY0 = 0, PRIORITY1, PRIORITY2
+} task_priority_type_e;
+
+/*! @brief led state */
+typedef enum
+{
+	ON = 0, OFF
+} led_state_type_e;
+
 /*! @brief Task handle type, used to identify a task */
 typedef int8_t rtos_task_handle_t;
 
