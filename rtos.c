@@ -3,7 +3,9 @@
  * @author ITESO
  * @date Feb 2018
  * @brief Implementation of rtos API
- *
+ * created by
+ * Luis Roberto Lomeli IE700093
+ * Jorge Mizael Rodriguez IE698983
  * This is the implementation of the rtos module for the
  * embedded systems II course at ITESO
  */
@@ -16,25 +18,6 @@
 #include "fsl_gpio.h"
 #include "fsl_port.h"
 #endif
-/**********************************************************************************/
-// Module defines
-/**********************************************************************************/
-
-#define FORCE_INLINE 	__attribute__((always_inline)) inline
-
-
-#define RESERVED_MEMORY				10
-#define STACK_OFFSET_ISR_AND_EXEC	9
-#define STACK_FRAME_SIZE			8
-#define STACK_PC_OFFSET				2
-#define STACK_PSR_OFFSET			1
-#define STACK_PSR_DEFAULT			0x01000000
-#define TASK_IDLE					1
-#define END_OF_STACK				1
-#define VALUE_START_PERIOD			1
-#define RTOS_INVALID_TASK			(-1)
-
-
 
 /**********************************************************************************/
 // IS ALIVE definitions
@@ -48,49 +31,6 @@
 static void init_is_alive(void);
 static void refresh_is_alive(void);
 #endif
-
-/**********************************************************************************/
-// Type definitions
-/**********************************************************************************/
-
-typedef enum
-{
-	S_READY = 0, S_RUNNING, S_WAITING, S_SUSPENDED
-} task_state_e;
-typedef enum
-{
-	START_ZERO = 0, START_ONE
-} start_values_type_e;
-typedef enum
-{
-	kFromISR = 0, kFromNormalExec
-} task_switch_type_e;
-
-typedef struct
-{
-	uint8_t priority;
-	task_state_e state;
-	uint32_t *sp;
-	void (*task_body)();
-	rtos_tick_t local_tick;
-	uint32_t reserved[RESERVED_MEMORY];
-	uint32_t stack[RTOS_STACK_SIZE];
-} rtos_tcb_t;
-
-/**********************************************************************************/
-// Global (static) task list
-/**********************************************************************************/
-
-struct
-{
-	uint8_t nTasks;
-	rtos_task_handle_t current_task;
-	rtos_task_handle_t next_task;
-	rtos_tcb_t tasks[RTOS_MAX_NUMBER_OF_TASKS + TASK_IDLE];
-	rtos_tick_t global_tick;
-} task_list =
-{ 0 };
-
 /**********************************************************************************/
 // Local methods prototypes
 /**********************************************************************************/
@@ -102,29 +42,47 @@ FORCE_INLINE static void context_switch(task_switch_type_e type);
 static void idle_task(void);
 
 /**********************************************************************************/
+// Global Variables
+/**********************************************************************************/
+
+static task_list_t  task_list = { 0 };
+
+/**********************************************************************************/
 // API implementation
 /**********************************************************************************/
 
 /**********************************************************************************/
-///@brief Starts the scheduler, from this point the RTOS takes control
-///on the processor
-//@param none
-//@retval none
+//@ brief Starts the scheduler, from this point the RTOS takes control
+//@ on the processor
+//@ param none
+//@ retval none
 /**********************************************************************************/
 void rtos_start_scheduler(void)
 {
 #ifdef RTOS_ENABLE_IS_ALIVE
-	/** start the so whit the default task  */
+
+	/** configures OS I/O ports  */
 	init_is_alive();
-	task_list.global_tick = START_ZERO; /** */
+
+	/** sets the systick timer */
+	task_list.global_tick = START_ZERO;
+
+	/** creates default task*/
 	rtos_create_task(idle_task, PRIORITY0, kAutoStart);
+
+	/** presets and prepare the system when task cant be created*/
 	task_list.current_task = RTOS_INVALID_TASK;
+
 #endif
+
+	/**Configure systick interrupt*/
 	SysTick->CTRL = SysTick_CTRL_CLKSOURCE_Msk | SysTick_CTRL_TICKINT_Msk
 	        | SysTick_CTRL_ENABLE_Msk;
+
+	/**gives the first count value number of ticks to count*/
 	reload_systick();
 
-	for (;;);
+	for (;;); /**everything configure waiting for interrupt*/
 }
 
 /**********************************************************************************/
@@ -137,29 +95,36 @@ rtos_task_handle_t rtos_create_task(void (*task_body)(), uint8_t priority,
 		rtos_autostart_e autostart)
 {
 	rtos_task_handle_t retval = RTOS_INVALID_TASK;
-	/** check the number of taks and create its*/
+	/** checks if there are enough space to create another task*/
 	if(RTOS_MAX_NUMBER_OF_TASKS > task_list.nTasks)
 	{
-		/** change of state of task to ready*/
+		/** according to kauto change of state of task to ready or suspended */
 		task_list.tasks[task_list.nTasks].state = (kAutoStart == autostart) ? S_READY : S_SUSPENDED;
 
+		/** Sets all fields of the tasks */
 		task_list.tasks[task_list.nTasks].priority = priority;
 		task_list.tasks[task_list.nTasks].local_tick = START_ZERO;
 		task_list.tasks[task_list.nTasks].task_body = task_body;
+
+		/** stack pointer points out the first parameter of task context*/
 		task_list.tasks[task_list.nTasks].sp =
 				&(task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - END_OF_STACK - STACK_FRAME_SIZE]);
+
+		/** stores the function address and the PSR default value*/
 		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] = STACK_PSR_DEFAULT;
 		task_list.tasks[task_list.nTasks].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] = (uint32_t) task_body;
+
 		retval = task_list.nTasks;
 		task_list.nTasks++;
-		return retval;
+
+		return retval;	/** returns task ID */
 
 	}
 	else
 	{
-		/** the task is invaliid*/
-		return retval;
+		return retval;	/** error while creating task*/
 	}
+
 	return retval;
 }
 
@@ -182,7 +147,7 @@ rtos_tick_t rtos_get_clock(void)
 /**********************************************************************************/
 void rtos_delay(rtos_tick_t ticks)
 {
-	/** change the state of task when is call to function */
+	/** This function rest the task so that another task can be executed */
 	task_list.tasks[task_list.current_task].state = S_WAITING;
 	task_list.tasks[task_list.current_task].local_tick = ticks;
 	dispatcher(kFromNormalExec);
@@ -196,7 +161,7 @@ void rtos_delay(rtos_tick_t ticks)
 /**********************************************************************************/
 void rtos_suspend_task(void)
 {
-	/** change the state of task when is call to function */
+	/** when this function is called the task goes to sleep mode */
 	task_list.tasks[task_list.current_task].state = S_SUSPENDED;
 	dispatcher(kFromNormalExec);
 
@@ -209,7 +174,7 @@ void rtos_suspend_task(void)
 /**********************************************************************************/
 void rtos_activate_task(rtos_task_handle_t task)
 {
-	/** change the state of task when is call to function */
+	/** this activates the task which was suspended */
 	task_list.tasks[task].state = S_READY;
 	dispatcher(kFromNormalExec);
 
@@ -241,8 +206,9 @@ static void dispatcher(task_switch_type_e type)
 {
 	rtos_task_handle_t next_task = RTOS_INVALID_TASK;
 	uint8_t index;
-	/** change the priority of tasks */
 	int8_t highest_priority = LOWEST_PRIORITY;
+
+	/** this selects an active task with highest priority to be executed */
 	for (index = 0; index < task_list.nTasks; index++)
 	{
 		if ((highest_priority < task_list.tasks[index].priority)
@@ -255,7 +221,7 @@ static void dispatcher(task_switch_type_e type)
 	}
 
 
-	//** realized the change of context between tasks*/
+	//** if the next task is the same as the new one then stop doing context switch */
 	if (task_list.current_task != next_task)
 	{
 		task_list.next_task = next_task;
@@ -276,16 +242,17 @@ FORCE_INLINE static void context_switch(task_switch_type_e type)
 
 	if(first_run)
 	{
+		/**Stack pointer doesn't have to be stored because there is no context switch*/
 		first_run = START_ZERO;
 	}
 	else
 	{
-		/**SALVA EL STACK POINTER ACTUAL EN EL STACK DE LA TAREA ACTUAL*/
+		/**Saves the stack of the current task evaluating the stack frame*/
 		task_list.tasks[task_list.current_task].sp = (kFromNormalExec == type) ? sp - STACK_OFFSET_ISR_AND_EXEC
 				: sp + STACK_OFFSET_ISR_AND_EXEC;
 	}
 
-	/**CAMBIA LA TAREA ACTUAL POR SIGUIENTE TAREA*/
+	/**Execute next task make the context switch*/
 	task_list.current_task = task_list.next_task;
 	task_list.tasks[task_list.current_task].state = S_RUNNING;
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
@@ -304,10 +271,12 @@ static void activate_waiting_tasks()
 
 	 for(index = START_ZERO ; index < task_list.nTasks; index++)
 	 {
-		 if(S_WAITING == task_list.tasks[index].state || S_SUSPENDED == task_list.tasks[index].state)/** || S_SUSPENDED == task_list.tasks[index].state*/
+		 /** Searches for the task which has left sleep mode (done delay)*/
+		 if(S_WAITING == task_list.tasks[index].state)
 		 {
 			 task_list.tasks[index].local_tick--;
 
+			 /** And turns it ready (ON)*/
 			 if(START_ZERO == task_list.tasks[index].local_tick)
 			 {
 				 task_list.tasks[index].state = S_READY;
@@ -346,35 +315,32 @@ static void idle_task(void)
 void SysTick_Handler(void)
 {
 #ifdef RTOS_ENABLE_IS_ALIVE
-	refresh_is_alive();
+
+	refresh_is_alive();			/* alive led toggling **/
 
 #endif
 	task_list.global_tick++;
-	activate_waiting_tasks();
-	dispatcher(kFromISR);
-	reload_systick();
+	activate_waiting_tasks();	/** search for a task to run*/
+	dispatcher(kFromISR);		/** try to switch context*/
+	reload_systick();			/** recharges the value to interrupt again*/
 
 }
 
 /**********************************************************************************/
-//@brief move the stack pointer between procesador and actual task
+//@brief moves the actual task stack pointer to the global one on processor
 //@param none
 //@retval none
 /**********************************************************************************/
 void PendSV_Handler(void)
 {
 	register uint32_t *sp asm("r0");
-	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;
+	SCB->ICSR |= SCB_ICSR_PENDSVCLR_Msk;	/**saves the context cortex M-4*/
 	sp = task_list.tasks[task_list.current_task].sp;
-	asm("MOV r7, r0");
+	asm("MOV r7, r0");	/** preserves the original stack pointer as it was*/
 }
 
 /**********************************************************************************/
 // IS ALIVE SIGNAL IMPLEMENTATION
-/**********************************************************************************/
-
-/**********************************************************************************/
-
 /**********************************************************************************/
 #ifdef RTOS_ENABLE_IS_ALIVE
 static void init_is_alive(void)
@@ -394,7 +360,7 @@ static void init_is_alive(void)
 }
 
 /**********************************************************************************/
-
+//
 /**********************************************************************************/
 static void refresh_is_alive(void)
 {
@@ -415,3 +381,6 @@ static void refresh_is_alive(void)
 	}
 }
 #endif
+/**********************************************************************************/
+//
+/**********************************************************************************/
